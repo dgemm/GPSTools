@@ -117,8 +117,11 @@ def main():
   prev_stop = None
   
   for stop in stillstops:
+    # Squared distance between this point and previous one
+    d2 = ((stop['lat']-prev_stop['lat'])**2 + (stop['lng']-prev_stop['lng'])**2
+
     # Enforce minimum distance between stops
-    if prev_stop and ((stop['lat']-prev_stop['lat'])**2 + (stop['lng']-prev_stop['lng'])**2 < MinLineThresh):
+    if prev_stop and d2 < MinLineThresh):
       continue
     
     addEndpoint(doc, PositionsFolder, stop['lat'], stop['lng'])
@@ -132,14 +135,17 @@ def main():
   
   for item in data['locations']:
     point = parseloc(item)
-    
+
+    # Squared distance between this point and previous
+    d2 = (point['lat']-prev_point['lat'])**2 + (point['lng']-prev_point['lng'])**2
+
     # Distance threshold to start a new line
-    if prev_point and ((point['lat']-prev_point['lat'])**2 + (point['lng']-prev_point['lng'])**2 > MaxLineThresh):
+    if prev_point and (d2 > MaxLineThresh):
       coordslist.append(coords)
       coords = []
     
     # Enforce minimum distance between points
-    if prev_point and ((point['lat']-prev_point['lat'])**2 + (point['lng']-prev_point['lng'])**2 < MinLineThresh):
+    if prev_point and (d2 < MinLineThresh):
       continue
     
     # Add this point
