@@ -41,16 +41,18 @@ class LocationDataFile(object):
 
   def rewind(self):
     self.f.seek(1)  # Past the root level "{" character
+    self.bytes_read = 0
     self.progress = 0
 
   def print_progress(self):
-    progress = int(100*float(self.f.tell())/self.f_size)
+    progress = int(100*float(self.bytes_read)/self.f_size)
 
     if progress != self.progress:
       print '%d%%' % progress
       self.progress = progress
 
   def getchar(self):
+    self.bytes_read += 1
     return self.f.read(1)
 
 
@@ -59,7 +61,6 @@ def get_next_item(f):
   curlies = 0
 
   while True:
-    f.print_progress()
     c = f.getchar()
 
     if not c:
@@ -78,6 +79,8 @@ def get_next_item(f):
     chunk += c
 
     if curlies == 0:
+      f.print_progress()
+
       yield json.loads(chunk)
 
       # Reset chunk
