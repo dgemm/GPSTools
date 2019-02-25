@@ -26,7 +26,7 @@ def parseloc(location):
   result = {
     'lat': 0.0000001*location['latitudeE7'],
     'lng': 0.0000001*location['longitudeE7'],
-    'time': 0.001*int(location['timestampMs']),
+    'time': int(location['timestampMs']),
   }
 
   return result
@@ -89,21 +89,13 @@ def get_next_item(f):
   #
 
 
+# Write KMZ file
+def write_kmz(doc, absoutfile):
+  with zipfile.ZipFile(absoutfile, 'w', zipfile.ZIP_DEFLATED) as f:
+    f.writestr('doc.kml', doc.toxml(encoding='UTF-8'))
 
 
-
-
-
-
-
-
-# Main function
-def main():
-  # Get current directory
-  this_dir = os.path.dirname(os.path.abspath(__file__))
-  datafile = os.path.join(this_dir, infile)
-  absoutfile = os.path.join(this_dir, outfile)
-
+def init_new_kmz(outfile):
   # Start the KML document
   doc = xml.dom.minidom.Document()
   kml = doc.createElement('kml')
@@ -119,68 +111,9 @@ def main():
   Document.appendChild(name)
 
   description = doc.createElement('description')
-  txt = doc.createTextNode('Track Description')
+  txt = doc.createTextNode('0')  # Actually used to store a timestamp
   description.appendChild(txt)
   Document.appendChild(description)
-
-  PositionsFolder = doc.createElement('Folder')
-  PositionsFolder.setAttribute('id', 'Positions')
-  Document.appendChild(PositionsFolder)
-
-  fopen = doc.createElement('open')
-  txt = doc.createTextNode('1')
-  fopen.appendChild(txt)
-  PositionsFolder.appendChild(fopen)
-
-
-
-
-
-
-  # Open data file
-  f = LocationDataFile(datafile)
-
-
-
-
-
-
-
-
-  # Path coordinate pairs
-  coordslist = []
-  coords = []
-
-  prev_point = {
-    'lat': 0.0,
-    'lng': 0.0,
-  }
-
-  print 'Finding points'
-  f.rewind()
-
-  for item in get_next_item(f):
-    point = parseloc(item)
-
-    # Squared distance between this point and previous
-    d2 = (point['lat']-prev_point['lat'])**2 + (point['lng']-prev_point['lng'])**2
-
-    # Distance threshold to start a new line
-    if prev_point and (d2 > MaxLineThresh):
-      coordslist.append(coords)
-      coords = []
-
-    # Enforce minimum distance between points
-    if prev_point and (d2 < MinLineThresh):
-      continue
-
-    # Add this point
-    coords.append('%f,%f' % (point['lng'], point['lat']))
-    prev_point = point
-
-  # Add the last set of coords
-  coordslist.append(coords)
-  coords = []
 
   LinesFolder = doc.createElement('Folder')
   LinesFolder.setAttribute('id', 'Lines')
@@ -215,6 +148,130 @@ def main():
   MultiGeometry = doc.createElement('MultiGeometry')
   Placemark.appendChild(MultiGeometry)
 
+  # Write a new file
+  write_kmz(doc, outfile)
+
+
+def get_doc_from_kmz(kmzfile):
+  with zipfile.ZipFile(kmzfile, 'r') as f:
+    kml = f.read('doc.kml')
+    doc = xml.dom.minidom.parseString(kml)
+    return doc
+
+
+def get_description_from_doc(doc):
+  kml = doc.childNodes[0]
+  document = kml.childNodes[0]
+
+  for c1 in document.childNodes:
+    if c1.tagName == 'description':
+      return c1
+
+
+def get_timestamp_from_doc(doc):
+  description = get_description_from_doc(doc)
+  value = description.firstChild.nodeValue
+
+  try:
+    return int(value)
+  except ValueError:
+    return 0
+
+
+def write_timestamp(doc, latest_timestamp):
+  description = get_description_from_doc(doc)
+  description.firstChild.nodeValue = str(latest_timestamp)
+
+
+def get_multigeometry_from_doc(doc):
+  kml = doc.childNodes[0]
+  document = kml.childNodes[0]
+
+  for c1 in document.childNodes:
+    if c1.tagName == 'Folder':
+      for c2 in c1.childNodes:
+        if c2.tagName == 'Placemark':
+          for c3 in c2.childNodes:
+            if c3.tagName == 'MultiGeometry':
+              return c3
+
+
+# Main function
+def main():
+  # Get current directory
+  this_dir = os.path.dirname(os.path.abspath(__file__))
+  datafile = os.path.join(this_dir, infile)
+  absoutfile = os.path.join(this_dir, outfile)
+
+  previous_timestamp = 0
+
+  if os.path.isfile(absoutfile):
+    # Try to get saved timestamp from doc
+    doc = get_doc_from_kmz(absoutfile)
+    previous_timestamp = get_timestamp_from_doc(doc)
+
+    if previous_timestamp > 0:
+      print 'Previous timestamp is', previous_timestamp
+    else:
+      # Unable to find a starting point from the last KMZ
+      # Need to start over
+      print 'Unable to recover last timestamp from KMZ'
+      init_new_kmz(absoutfile)
+  else:
+    # KMZ doesn't exist at all, start a new one
+    init_new_kmz(absoutfile)
+
+  # Open the KMZ for appending
+  doc = get_doc_from_kmz(absoutfile)
+  MultiGeometry = get_multigeometry_from_doc(doc)
+
+  # Open data file
+  f = LocationDataFile(datafile)
+
+  # Path coordinate pairs
+  coordslist = []
+  coords = []
+
+  prev_point = {
+    'lat': 0.0,
+    'lng': 0.0,
+  }
+
+  print 'Finding points'
+  f.rewind()
+
+  latest_timestamp = previous_timestamp
+
+  for item in get_next_item(f):
+    point = parseloc(item)
+    timestamp = point['time']
+
+    if timestamp < previous_timestamp:
+      print 'Timestamp', timestamp, 'reached previous value', previous_timestamp
+      break
+
+    latest_timestamp = max(latest_timestamp, timestamp)
+
+    # Squared distance between this point and previous
+    d2 = (point['lat']-prev_point['lat'])**2 + (point['lng']-prev_point['lng'])**2
+
+    # Distance threshold to start a new line
+    if prev_point and (d2 > MaxLineThresh):
+      coordslist.append(coords)
+      coords = []
+
+    # Enforce minimum distance between points
+    if prev_point and (d2 < MinLineThresh):
+      continue
+
+    # Add this point
+    coords.append('%f,%f' % (point['lng'], point['lat']))
+    prev_point = point
+
+  # Add the last set of coords
+  coordslist.append(coords)
+  coords = []
+
   for coords in coordslist:
     # Skip single point lines
     if len(coords) < 2:
@@ -243,11 +300,13 @@ def main():
     coordinates.appendChild(txt)
     LineString.appendChild(coordinates)
 
-  # Write KMZ file
-  with zipfile.ZipFile(absoutfile, 'w', zipfile.ZIP_DEFLATED) as f:
-    print
-    print 'Writing %s' % outfile
-    f.writestr('doc.kml', doc.toprettyxml(encoding='UTF-8'))
+  assert latest_timestamp > 0
+  write_timestamp(doc, latest_timestamp)
+
+  print
+  print 'Writing kmz...'
+  write_kmz(doc, absoutfile)
+
   #
 
 # Do the stuff
