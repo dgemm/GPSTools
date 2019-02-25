@@ -89,29 +89,12 @@ def get_next_item(f):
   #
 
 
-# Add an endpoint (stop) to the map.
-def addEndpoint(doc, PositionsFolder, lat, lng):
-  # Add the endpoint
-  EndPlacemark = doc.createElement('Placemark')
-  PositionsFolder.appendChild(EndPlacemark)
 
-  Point = doc.createElement('Point')
-  EndPlacemark.appendChild(Point)
 
-  extrude = doc.createElement('extrude')
-  txt = doc.createTextNode('1')
-  extrude.appendChild(txt)
-  Point.appendChild(extrude)
 
-  altitudeMode = doc.createElement('altitudeMode')
-  txt = doc.createTextNode('relativeToGround')
-  altitudeMode.appendChild(txt)
-  Point.appendChild(altitudeMode)
 
-  coordinates = doc.createElement('coordinates')
-  txt = doc.createTextNode('%f,%f,0' % (lng, lat))
-  coordinates.appendChild(txt)
-  Point.appendChild(coordinates)
+
+
 
 
 # Main function
@@ -149,46 +132,20 @@ def main():
   fopen.appendChild(txt)
   PositionsFolder.appendChild(fopen)
 
+
+
+
+
+
   # Open data file
   f = LocationDataFile(datafile)
 
-  # Make a list of points where we were stopped
-  stillstops = []
 
-  print 'Finding stops'
 
-  for item in get_next_item(f):
-    try:
-      acts = item['activitys']
-    except KeyError:
-      acts = None
-    except IndexError:
-      acts = None
 
-    if acts:
-      for act in acts:
-        for a in act['activities']:
-          if (a['type'] == 'still') and (a['confidence'] == 100):
-           stillstops.append(parseloc(item))
-           break
 
-  # Write the stops to XML
-  prev_stop = None
 
-  for stop in stillstops:
-    if not stop:
-      continue
 
-    # Enforce minimum distance between stops
-    if prev_stop:
-      # Squared distance between this point and previous one
-      d2 = (stop['lat']-prev_stop['lat'])**2 + (stop['lng']-prev_stop['lng'])**2
-
-      if d2 < MinLineThresh:
-        continue
-
-    addEndpoint(doc, PositionsFolder, stop['lat'], stop['lng'])
-    prev_stop = stop
 
   # Path coordinate pairs
   coordslist = []
