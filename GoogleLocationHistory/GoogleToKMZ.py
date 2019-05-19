@@ -39,8 +39,13 @@ class LocationDataFile(object):
     self.f_size = self.f.tell()
     self.rewind()
 
-  def rewind(self):
+  def _rewind(self):
     self.f.seek(1)  # Past the root level "{" character
+    self.bytes_read = 0
+    self.progress = 0
+
+  def _forward(self):
+    self.f.seek(-1, os.SEEK_END)  # Past the root level "{" character
     self.bytes_read = 0
     self.progress = 0
 
@@ -55,38 +60,85 @@ class LocationDataFile(object):
     self.bytes_read += 1
     return self.f.read(1)
 
+  def get_next_item(self):
+    chunk = ''
+    curlies = 0
 
-def get_next_item(f):
-  chunk = ''
-  curlies = 0
+    while True:
+      c = self.getchar()
 
-  while True:
-    c = f.getchar()
+      if not c:
+        raise StopIteration
 
-    if not c:
-      raise StopIteration
+      if len(chunk) == 0 and c != '{':
+        # Skip until the first "{"
+        continue
 
-    if len(chunk) == 0 and c != '{':
-      # Skip until the first "{"
-      continue
+      # Count opening and closing curlies to find the end of object
+      if c == '{':
+        curlies += 1
+      elif c == '}':
+        curlies -= 1
 
-    # Count opening and closing curlies to find the end of object
-    if c == '{':
-      curlies += 1
-    elif c == '}':
-      curlies -= 1
+      chunk += c
 
-    chunk += c
+      if curlies == 0:
+        self.print_progress()
 
-    if curlies == 0:
-      f.print_progress()
+        yield json.loads(chunk)
 
-      yield json.loads(chunk)
+        # Reset chunk
+        chunk = ''
+        curlies = 0
+    #
 
-      # Reset chunk
-      chunk = ''
-      curlies = 0
-  #
+  # getchar(), but reads backwards
+  def getprevchar(self):
+    self.bytes_read += 1
+    self.f.seek(-1, os.SEEK_CUR)
+    the_char = self.f.read(1)
+    self.f.seek(-1, os.SEEK_CUR)
+    return the_char
+
+  # Like get_next_item(), but reads the file backwards
+  def get_prev_item(self):
+    chunk = ''
+    curlies = 0
+
+    while True:
+      c = self.getprevchar()
+
+      if not c:
+        raise StopIteration
+
+      if len(chunk) == 0 and c != '}':
+        # Skip until the first "{"
+        continue
+
+      # Count opening and closing curlies to find the end of object
+      if c == '}':
+        curlies += 1
+      elif c == '{':
+        curlies -= 1
+
+      chunk += c
+
+      if curlies == 0:
+        #self.print_progress()
+
+        # JSON is backwards since we read it backwards, reverse it
+        yield json.loads(chunk[::-1])
+
+        # Reset chunk
+        chunk = ''
+        curlies = 0
+    #
+
+  # Use this to select forward or reverse reading...google has in the past
+  # changed the direction the file is written - previously it was most recent
+  # first but now is ordered the other way.
+  #rewind, get_item = _rewind, get_next_item
+  rewind, get_item = _forward, get_prev_item
 
 
 # Write KMZ file
@@ -242,7 +294,7 @@ def main():
 
   latest_timestamp = previous_timestamp
 
-  for item in get_next_item(f):
+  for item in f.get_item():
     point = parseloc(item)
     timestamp = point['time']
 
