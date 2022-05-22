@@ -9,12 +9,12 @@ import zipfile
 try:
   import simplejson as json
 except ImportError:
-  print 'Using the slow json parser'
+  print('Using the slow json parser')
   import json
 
 
 # Files
-infile = 'Takeout/Location History/Location History.json'
+infile = 'Takeout/Location History/Records.json'
 outfile = 'out.kmz'
 
 
@@ -23,10 +23,18 @@ MaxLineThresh = 0.1 ** 2
 
 
 def parseloc(location):
+  ts = location['timestamp']
+
+  try:
+    dt = datetime.datetime.strptime(ts, '%Y-%m-%dT%H:%M:%S.%fZ')
+  except ValueError:
+    # Some timestamps don't include the fractional seconds :-(
+    dt = datetime.datetime.strptime(ts, '%Y-%m-%dT%H:%M:%SZ')
+
   result = {
     'lat': 0.0000001*location['latitudeE7'],
     'lng': 0.0000001*location['longitudeE7'],
-    'time': int(location['timestampMs']),
+    'time': int(1000*dt.replace(tzinfo=datetime.timezone.utc).timestamp()),
   }
 
   return result
@@ -53,7 +61,7 @@ class LocationDataFile(object):
     progress = int(100*float(self.bytes_read)/self.f_size)
 
     if progress != self.progress:
-      print '%d%%' % progress
+      print('%d%%' % progress)
       self.progress = progress
 
   def getchar(self):
@@ -102,7 +110,7 @@ class LocationDataFile(object):
 
   # Like get_next_item(), but reads the file backwards
   def get_prev_item(self):
-    chunk = ''
+    chunk = b''
     curlies = 0
 
     while True:
@@ -111,14 +119,14 @@ class LocationDataFile(object):
       if not c:
         raise StopIteration
 
-      if len(chunk) == 0 and c != '}':
+      if len(chunk) == 0 and c != b'}':
         # Skip until the first "{"
         continue
 
       # Count opening and closing curlies to find the end of object
-      if c == '}':
+      if c == b'}':
         curlies += 1
-      elif c == '{':
+      elif c == b'{':
         curlies -= 1
 
       chunk += c
@@ -130,7 +138,7 @@ class LocationDataFile(object):
         yield json.loads(chunk[::-1])
 
         # Reset chunk
-        chunk = ''
+        chunk = b''
         curlies = 0
     #
 
@@ -263,11 +271,11 @@ def main():
     previous_timestamp = get_timestamp_from_doc(doc)
 
     if previous_timestamp > 0:
-      print 'Previous timestamp is', previous_timestamp
+      print('Previous timestamp is', previous_timestamp)
     else:
       # Unable to find a starting point from the last KMZ
       # Need to start over
-      print 'Unable to recover last timestamp from KMZ'
+      print('Unable to recover last timestamp from KMZ')
       init_new_kmz(absoutfile)
   else:
     # KMZ doesn't exist at all, start a new one
@@ -289,7 +297,7 @@ def main():
     'lng': 0.0,
   }
 
-  print 'Finding points'
+  print('Finding points')
   f.rewind()
 
   latest_timestamp = previous_timestamp
@@ -299,7 +307,7 @@ def main():
     timestamp = point['time']
 
     if timestamp < previous_timestamp:
-      print 'Timestamp', timestamp, 'reached previous value', previous_timestamp
+      print('Timestamp', timestamp, 'reached previous value', previous_timestamp)
       break
 
     latest_timestamp = max(latest_timestamp, timestamp)
@@ -355,8 +363,8 @@ def main():
   assert latest_timestamp > 0
   write_timestamp(doc, latest_timestamp)
 
-  print
-  print 'Writing kmz...'
+  print()
+  print('Writing kmz...')
   write_kmz(doc, absoutfile)
 
   #
